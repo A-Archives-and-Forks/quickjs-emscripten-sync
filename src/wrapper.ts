@@ -16,11 +16,16 @@ export function wrap<T = any>(
   syncMode?: (target: T) => SyncMode | undefined,
   wrappable?: (target: unknown) => boolean,
 ): Wrapped<T> | undefined {
-  // promise and date cannot be wrapped
+  // These built-ins rely on internal slots or non-property access, so a proxy
+  // would break them; they are marshalled by value instead of being wrapped.
   if (
     !isObject(target) ||
     target instanceof Promise ||
     target instanceof Date ||
+    target instanceof ArrayBuffer ||
+    ArrayBuffer.isView(target) ||
+    target instanceof Map ||
+    target instanceof Set ||
     (wrappable && !wrappable(target))
   )
     return undefined;
@@ -188,8 +193,9 @@ export function isHandleWrapped(
   return !!ctx.dump(
     call(
       ctx,
-      // promise and date cannot be wrapped
-      `(a, s) => (a instanceof Promise) || (a instanceof Date) || (typeof a === "object" && a !== null || typeof a === "function") && !!a[s]`,
+      // Built-ins that must not be wrapped (internal slots / non-property access)
+      // report as "wrapped" so wrapHandle leaves them alone.
+      `(a, s) => (a instanceof Promise) || (a instanceof Date) || (a instanceof ArrayBuffer) || (ArrayBuffer.isView(a)) || (a instanceof Map) || (a instanceof Set) || (typeof a === "object" && a !== null || typeof a === "function") && !!a[s]`,
       undefined,
       handle,
       key,

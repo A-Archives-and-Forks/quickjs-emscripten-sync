@@ -3,6 +3,7 @@ import type { QuickJSDeferredPromise, QuickJSHandle, QuickJSContext } from "quic
 import marshalCustom, { defaultCustom } from "./custom";
 import marshalFunction from "./function";
 import marshalJSON from "./json";
+import marshalMapSet from "./mapset";
 import marshalObject from "./object";
 import marshalPrimitive from "./primitive";
 import marshalPromise from "./promise";
@@ -52,6 +53,7 @@ export function marshal(target: unknown, options: Options): QuickJSHandle {
     marshalCustom(ctx, target, pre2, [...defaultCustom, ...(options.custom ?? [])]) ??
     marshalPromise(ctx, target, marshal2, pre2) ??
     marshalFunction(ctx, target, marshal2, unmarshal, pre2, options.preApply) ??
+    marshalMapSet(ctx, target, marshal2, pre2) ??
     marshalObject(ctx, target, marshal2, pre2) ??
     ctx.undefined
   );

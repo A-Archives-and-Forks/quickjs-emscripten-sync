@@ -2,6 +2,7 @@ import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
 import unmarshalCustom, { defaultCustom } from "./custom";
 import unmarshalFunction from "./function";
+import unmarshalMapSet from "./mapset";
 import unmarshalObject from "./object";
 import unmarshalPrimitive from "./primitive";
 import unmarshalPromise from "./promise";
@@ -37,8 +38,18 @@ function unmarshalInner(handle: QuickJSHandle, options: Options): [any, boolean]
 
   const unmarshal2 = (h: QuickJSHandle) => unmarshalInner(h, options);
 
+  // Custom types (Symbol, Date, ArrayBuffer, TypedArray, ...) are unmarshalled
+  // by value and not tracked in the map, so their source handle is not owned by
+  // anyone else and the caller must dispose it.
+  const custom = unmarshalCustom(ctx, handle, pre, [...defaultCustom, ...(options.custom ?? [])]);
+  if (custom) return [custom, true];
+
+  // Map/Set are unmarshalled by value (snapshot copy), so the source handle is
+  // not tracked and the caller must dispose it.
+  const mapSet = unmarshalMapSet(ctx, handle, unmarshal2, pre);
+  if (mapSet) return [mapSet, true];
+
   const result =
-    unmarshalCustom(ctx, handle, pre, [...defaultCustom, ...(options.custom ?? [])]) ??
     unmarshalPromise(ctx, handle, marshal, pre) ??
     unmarshalFunction(ctx, handle, marshal, unmarshal2, pre) ??
     unmarshalObject(ctx, handle, unmarshal2, pre);

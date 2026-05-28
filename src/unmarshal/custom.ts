@@ -1,6 +1,6 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
-import { call } from "../vmutil";
+import { call, consume } from "../vmutil";
 
 export default function unmarshalCustom(
   ctx: QuickJSContext,
@@ -23,9 +23,40 @@ export function symbol(handle: QuickJSHandle, ctx: QuickJSContext): symbol | und
 }
 
 export function date(handle: QuickJSHandle, ctx: QuickJSContext): Date | undefined {
-  if (!ctx.dump(call(ctx, "a => a instanceof Date", undefined, handle))) return;
-  const t = ctx.getNumber(call(ctx, "a => a.getTime()", undefined, handle));
+  if (!consume(call(ctx, "a => a instanceof Date", undefined, handle), h => ctx.dump(h))) return;
+  const t = consume(call(ctx, "a => a.getTime()", undefined, handle), h => ctx.getNumber(h));
   return new Date(t);
 }
 
-export const defaultCustom = [symbol, date];
+export function arrayBuffer(
+  handle: QuickJSHandle,
+  ctx: QuickJSContext,
+): ArrayBuffer | ArrayBufferView | undefined {
+  if (consume(call(ctx, "a => a instanceof ArrayBuffer", undefined, handle), h => ctx.dump(h))) {
+    const lifetime = ctx.getArrayBuffer(handle);
+    const copy = lifetime.value.slice();
+    lifetime.dispose();
+    return copy.buffer;
+  }
+
+  if (consume(call(ctx, "a => ArrayBuffer.isView(a)", undefined, handle), h => ctx.dump(h))) {
+    const name = consume(call(ctx, "a => a.constructor.name", undefined, handle), h =>
+      ctx.getString(h),
+    );
+    const Ctor = (globalThis as any)[name];
+    if (typeof Ctor !== "function") return;
+    const bufHandle = call(
+      ctx,
+      "a => a.buffer.slice(a.byteOffset, a.byteOffset + a.byteLength)",
+      undefined,
+      handle,
+    );
+    const lifetime = ctx.getArrayBuffer(bufHandle);
+    const bytes = lifetime.value.slice();
+    lifetime.dispose();
+    bufHandle.dispose();
+    return new Ctor(bytes.buffer);
+  }
+}
+
+export const defaultCustom = [symbol, date, arrayBuffer];

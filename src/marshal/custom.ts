@@ -1,6 +1,6 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
-import { call } from "../vmutil";
+import { call, consumeAll } from "../vmutil";
 
 export default function marshalCustom(
   ctx: QuickJSContext,
@@ -33,4 +33,18 @@ export function date(target: unknown, ctx: QuickJSContext): QuickJSHandle | unde
   return handle;
 }
 
-export const defaultCustom = [symbol, date];
+export function arrayBuffer(target: unknown, ctx: QuickJSContext): QuickJSHandle | undefined {
+  if (target instanceof ArrayBuffer) {
+    return ctx.newArrayBuffer(target.slice(0));
+  }
+  if (ArrayBuffer.isView(target)) {
+    // TypedArray or DataView: copy the viewed bytes and rebuild in the VM.
+    const bytes = new Uint8Array(target.buffer, target.byteOffset, target.byteLength).slice();
+    return consumeAll(
+      [ctx.newArrayBuffer(bytes.buffer), ctx.newString(target.constructor.name)],
+      ([buf, name]) => call(ctx, `(buf, name) => new globalThis[name](buf)`, undefined, buf, name),
+    );
+  }
+}
+
+export const defaultCustom = [symbol, date, arrayBuffer];

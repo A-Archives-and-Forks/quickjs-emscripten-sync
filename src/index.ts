@@ -109,6 +109,11 @@ export class Arena {
     this.context.disposeEx?.();
   }
 
+  /** Allows `using arena = new Arena(...)` to dispose the arena automatically. */
+  [Symbol.dispose]() {
+    this.dispose();
+  }
+
   /**
    * Evaluate JS code in the VM and get the result as an object on the host side. It also converts and re-throws error objects when an error is thrown during evaluation.
    */

@@ -1036,3 +1036,72 @@ describe("intrinsics configuration", () => {
     runtime.dispose();
   });
 });
+
+describe("Symbol.dispose", () => {
+  test("using disposes the arena", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    {
+      using arena = new Arena(ctx, { isMarshalable: true });
+      expect(arena.evalCode(`1 + 1`)).toBe(2);
+    }
+    // arena is disposed here; the context can still be disposed cleanly
+    ctx.dispose();
+  });
+});
+
+describe("ArrayBuffer and TypedArray", () => {
+  test("roundtrip", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+
+    const fromVM = arena.evalCode(`new Uint8Array([1, 2, 3, 250])`);
+    expect(fromVM).toBeInstanceOf(Uint8Array);
+    expect(Array.from(fromVM)).toEqual([1, 2, 3, 250]);
+
+    const buf = arena.evalCode(`new ArrayBuffer(4)`);
+    expect(buf).toBeInstanceOf(ArrayBuffer);
+    expect(buf.byteLength).toBe(4);
+
+    const echo = arena.evalCode<(x: Uint8Array) => Uint8Array>(`x => x`);
+    const back = echo(new Uint8Array([9, 8, 7]));
+    expect(back).toBeInstanceOf(Uint8Array);
+    expect(Array.from(back)).toEqual([9, 8, 7]);
+
+    const sum = arena.evalCode<(a: Float64Array) => number>(
+      `a => a.reduce((x, y) => x + y, 0)`,
+    );
+    expect(sum(new Float64Array([1.5, 2.5, 3]))).toBe(7);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+});
+
+describe("Map and Set", () => {
+  test("roundtrip", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+
+    const map = arena.evalCode(`new Map([["a", 1], ["b", { n: 2 }]])`);
+    expect(map).toBeInstanceOf(Map);
+    expect(map.get("a")).toBe(1);
+    expect(map.get("b")).toEqual({ n: 2 });
+
+    const set = arena.evalCode(`new Set([1, 2, 3])`);
+    expect(set).toBeInstanceOf(Set);
+    expect([...set]).toEqual([1, 2, 3]);
+
+    const mapSum = arena.evalCode<(m: Map<string, number>) => number>(
+      `m => { let s = 0; for (const v of m.values()) s += v; return s; }`,
+    );
+    expect(mapSum(new Map([["x", 10], ["y", 20]]))).toBe(30);
+
+    const echo = arena.evalCode<(s: Set<string>) => Set<string>>(`s => s`);
+    const back = echo(new Set(["p", "q"]));
+    expect(back).toBeInstanceOf(Set);
+    expect([...back]).toEqual(["p", "q"]);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+});

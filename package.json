@@ -35,6 +35,7 @@
     "build": "tsc && vite build",
     "test": "vitest",
     "bench": "vitest bench --run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
   "peerDependencies": {
