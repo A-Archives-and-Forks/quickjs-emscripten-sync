@@ -15,6 +15,7 @@ export function wrap<T = any>(
   marshal: (target: any) => [QuickJSHandle, boolean],
   syncMode?: (target: T) => SyncMode | undefined,
   wrappable?: (target: unknown) => boolean,
+  syncEnabled = true,
 ): Wrapped<T> | undefined {
   // These built-ins rely on internal slots or non-property access, so a proxy
   // would break them; they are marshalled by value instead of being wrapped.
@@ -31,6 +32,10 @@ export function wrap<T = any>(
     return undefined;
 
   if (isWrapped(target, proxyKeySymbol)) return target;
+
+  // Sync globally disabled: skip the proxy, but still treat the object as
+  // "wrapped" so the rest of the pipeline handles it uniformly.
+  if (!syncEnabled) return target as Wrapped<T>;
 
   const rec = new Proxy(target as any, {
     get(obj, key) {
@@ -85,11 +90,15 @@ export function wrapHandle(
   unmarshal: (handle: QuickJSHandle) => any,
   syncMode?: (target: QuickJSHandle) => SyncMode | undefined,
   wrappable?: (target: QuickJSHandle, ctx: QuickJSContext) => boolean,
+  syncEnabled = true,
 ): [Wrapped<QuickJSHandle> | undefined, boolean] {
   if (!isHandleObject(ctx, handle) || (wrappable && !wrappable(handle, ctx)))
     return [undefined, false];
 
   if (isHandleWrapped(ctx, handle, proxyKeySymbolHandle)) return [handle, false];
+
+  // Sync globally disabled: skip the VM-side proxy.
+  if (!syncEnabled) return [handle as Wrapped<QuickJSHandle>, false];
 
   const getSyncMode = (h: QuickJSHandle) => {
     const res = syncMode?.(unmarshal(h));

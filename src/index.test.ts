@@ -1037,6 +1037,42 @@ describe("intrinsics configuration", () => {
   });
 });
 
+describe("syncEnabled", () => {
+  const objCount = (ctx: any) => {
+    const h = ctx.runtime.computeMemoryUsage();
+    const c = ctx.dump(h).obj_count as number;
+    h.dispose();
+    return c;
+  };
+
+  const growth = async (syncEnabled: boolean) => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true, registeredObjects: [], syncEnabled });
+
+    arena.expose({ fnFromHost: () => ({ id: "x", data: Math.random() }) });
+    arena.evalCode(`globalThis.run = () => { for (let i = 0; i < 200; i++) fnFromHost(); }`);
+
+    arena.evalCode(`run()`);
+    const before = objCount(ctx);
+    arena.evalCode(`run()`);
+    const after = objCount(ctx);
+
+    arena.dispose();
+    ctx.dispose();
+    return after - before;
+  };
+
+  test("syncEnabled: false does not retain marshalled objects", async () => {
+    // returned objects are not retained, so repeated runs don't grow memory
+    expect(await growth(false)).toBeLessThan(50);
+  });
+
+  test("syncEnabled: true retains marshalled objects (default)", async () => {
+    // with sync on, every returned object is kept for identity, so memory grows
+    expect(await growth(true)).toBeGreaterThan(150);
+  });
+});
+
 describe("AsyncArena", () => {
   test("evalCodeAsync returns values", async () => {
     const ctx = await newAsyncContext();

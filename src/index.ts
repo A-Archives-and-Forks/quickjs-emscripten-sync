@@ -64,6 +64,8 @@ export type Options = {
   compat?: boolean;
   /** Experimental: use QuickJSContextEx, which wraps existing QuickJSContext. */
   experimentalContextEx?: boolean;
+  /** Globally enable sync mode (default `true`). When `false`, objects are not wrapped with proxies and marshalled handles are disposed after use, so `arena.sync` has no effect but objects are not retained for their whole lifetime. Useful to avoid memory growth when frequently exchanging short-lived objects. */
+  syncEnabled?: boolean;
 };
 
 /**
@@ -433,11 +435,12 @@ export class Arena {
       custom: this._options?.customMarshaller,
     });
 
-    return [handle, !this._map.hasHandle(handle)];
+    const syncEnabled = this._options?.syncEnabled ?? true;
+    return [handle, !syncEnabled || !this._map.hasHandle(handle)];
   };
 
   _preUnmarshal = (t: any, h: QuickJSHandle): Wrapped<any> => {
-    return this._register(t, h, undefined, true)?.[0];
+    return this._register(t, h, undefined, this._options?.syncEnabled ?? true)?.[0];
   };
 
   _unmarshalFind = (h: QuickJSHandle): unknown => {
@@ -505,6 +508,7 @@ export class Arena {
       this._marshal,
       this._syncMode,
       this._options?.isWrappable,
+      this._options?.syncEnabled ?? true,
     );
   }
 
@@ -526,6 +530,7 @@ export class Arena {
       this._unmarshal,
       this._syncMode,
       this._options?.isHandleWrappable,
+      this._options?.syncEnabled ?? true,
     );
   }
 

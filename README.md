@@ -217,6 +217,8 @@ type Options = {
   isHandleWrappable?: (handle: QuickJSHandle, ctx: QuickJSContext) => boolean;
   /** Compatibility with quickjs-emscripten prior to v0.15. Inject code for compatibility into context at Arena class initialization time. */
   compat?: boolean;
+  /** Globally enable sync mode (default `true`). When `false`, objects are not wrapped with proxies and marshalled handles are disposed after use, so `arena.sync` has no effect but objects are not retained for their whole lifetime. Useful to avoid memory growth when frequently exchanging short-lived objects. */
+  syncEnabled?: boolean;
 }
 ```
 
