@@ -7,12 +7,18 @@ export default function marshalMapSet(
   target: unknown,
   marshal: (target: unknown) => QuickJSHandle,
   preMarshal: (target: unknown, handle: QuickJSHandle) => QuickJSHandle | undefined,
+  disposeTransient: (handle: QuickJSHandle) => void = () => {},
 ): QuickJSHandle | undefined {
   if (target instanceof Map) {
     const raw = call(ctx, "() => new Map()");
     const handle = preMarshal(target, raw) ?? raw;
     for (const [k, v] of target) {
-      call(ctx, "(m, k, v) => m.set(k, v)", undefined, raw, marshal(k), marshal(v)).dispose();
+      const kh = marshal(k);
+      const vh = marshal(v);
+      call(ctx, "(m, k, v) => m.set(k, v)", undefined, raw, kh, vh).dispose();
+      // set() has taken its own references; drop ours if they were transient.
+      disposeTransient(kh);
+      disposeTransient(vh);
     }
     return handle;
   }
@@ -21,7 +27,10 @@ export default function marshalMapSet(
     const raw = call(ctx, "() => new Set()");
     const handle = preMarshal(target, raw) ?? raw;
     for (const v of target) {
-      call(ctx, "(s, v) => s.add(v)", undefined, raw, marshal(v)).dispose();
+      const vh = marshal(v);
+      call(ctx, "(s, v) => s.add(v)", undefined, raw, vh).dispose();
+      // add() has taken its own reference; drop ours if it was transient.
+      disposeTransient(vh);
     }
     return handle;
   }

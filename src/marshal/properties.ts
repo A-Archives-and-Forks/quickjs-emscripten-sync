@@ -7,13 +7,21 @@ export default function marshalProperties(
   target: object | ((...args: any[]) => any),
   handle: QuickJSHandle,
   marshal: (target: unknown) => QuickJSHandle,
+  disposeTransient: (handle: QuickJSHandle) => void = () => {},
 ): void {
   const descs = ctx.newObject();
+  // Property values may be transient (json copies / BigInt) with no owner; once
+  // `Object.defineProperties` has copied them into `handle` the standalone
+  // handles are redundant and disposed below. Owned handles are left untouched.
+  const transient: QuickJSHandle[] = [];
   const cb = (key: string | number | symbol, desc: PropertyDescriptor) => {
     const keyHandle = marshal(key);
     const valueHandle = typeof desc.value === "undefined" ? undefined : marshal(desc.value);
     const getHandle = typeof desc.get === "undefined" ? undefined : marshal(desc.get);
     const setHandle = typeof desc.set === "undefined" ? undefined : marshal(desc.set);
+    if (valueHandle) transient.push(valueHandle);
+    if (getHandle) transient.push(getHandle);
+    if (setHandle) transient.push(setHandle);
 
     ctx.newObject().consume(descObj => {
       Object.entries(desc).forEach(([k, v]) => {
@@ -41,6 +49,9 @@ export default function marshalProperties(
     Object.getOwnPropertySymbols(desc).forEach(k => cb(k, (desc as any)[k]));
 
     call(ctx, `Object.defineProperties`, undefined, handle, descs).dispose();
+    // Safe only after defineProperties has dup'd the values into `handle`; `descs`
+    // still holds its own references until its own dispose() in the finally.
+    for (const h of transient) disposeTransient(h);
   } finally {
     descs.dispose();
   }

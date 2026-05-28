@@ -16,6 +16,12 @@ export type Options = {
   marshalByReference?: (target: unknown) => boolean;
   registerHostRef?: (target: unknown, handle: QuickJSHandle) => QuickJSHandle;
   find: (target: unknown) => QuickJSHandle | undefined;
+  // Track a handle that nobody else owns (json copies, BigInt) so it can be
+  // disposed once consumed.
+  registerTransient?: (handle: QuickJSHandle) => void;
+  // Dispose a handle previously registered as transient, right after a parent
+  // consumer has copied it into the parent value. A no-op for owned handles.
+  disposeTransient?: (handle: QuickJSHandle) => void;
   pre: (
     target: unknown,
     handle: QuickJSHandle | QuickJSDeferredPromise,
@@ -31,6 +37,10 @@ export function marshal(target: unknown, options: Options): QuickJSHandle {
   {
     const primitive = marshalPrimitive(ctx, target);
     if (primitive) {
+      // BigInt handles are heap-allocated and, unlike strings and numbers, are
+      // not reclaimed unless explicitly disposed. Track them as transient so a
+      // nested one is freed by its parent consumer (or on dispose as a fallback).
+      if (typeof target === "bigint") options.registerTransient?.(primitive);
       return primitive;
     }
   }
@@ -59,12 +69,13 @@ export function marshal(target: unknown, options: Options): QuickJSHandle {
   }
 
   const marshal2 = (t: unknown) => marshal(t, options);
+  const disposeTransient = options.disposeTransient;
   return (
     marshalCustom(ctx, target, pre2, [...defaultCustom, ...(options.custom ?? [])]) ??
     marshalPromise(ctx, target, marshal2, pre2) ??
-    marshalFunction(ctx, target, marshal2, unmarshal, pre2, options.preApply) ??
-    marshalMapSet(ctx, target, marshal2, pre2) ??
-    marshalObject(ctx, target, marshal2, pre2) ??
+    marshalFunction(ctx, target, marshal2, unmarshal, pre2, options.preApply, disposeTransient) ??
+    marshalMapSet(ctx, target, marshal2, pre2, disposeTransient) ??
+    marshalObject(ctx, target, marshal2, pre2, disposeTransient) ??
     ctx.undefined
   );
 }

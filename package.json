@@ -42,6 +42,7 @@
     "quickjs-emscripten": "*"
   },
   "devDependencies": {
+    "@jitl/quickjs-wasmfile-debug-sync": "^0.32.0",
     "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^9.39.4",
     "eslint-config-reearth": "^0.3.8",

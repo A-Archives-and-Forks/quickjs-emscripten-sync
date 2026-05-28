@@ -9,6 +9,7 @@ export default function marshalObject(
   target: unknown,
   marshal: (target: unknown) => QuickJSHandle,
   preMarshal: (target: unknown, handle: QuickJSHandle) => QuickJSHandle | undefined,
+  disposeTransient: (handle: QuickJSHandle) => void = () => {},
 ): QuickJSHandle | undefined {
   if (typeof target !== "object" || target === null) return;
 
@@ -23,9 +24,11 @@ export default function marshalObject(
       : undefined;
   if (prototypeHandle) {
     call(ctx, "Object.setPrototypeOf", undefined, handle, prototypeHandle).dispose();
+    // setPrototypeOf has taken its own reference; drop ours if it was transient.
+    disposeTransient(prototypeHandle);
   }
 
-  marshalProperties(ctx, target, raw, marshal);
+  marshalProperties(ctx, target, raw, marshal, disposeTransient);
 
   return handle;
 }

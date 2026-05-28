@@ -119,7 +119,9 @@ export function isHandleObject(ctx: QuickJSContext, h: QuickJSHandle): boolean {
 export function json(ctx: QuickJSContext, target: any): QuickJSHandle {
   const json = JSON.stringify(target);
   if (!json) return ctx.undefined;
-  return call(ctx, `JSON.parse`, undefined, ctx.newString(json));
+  // `call` does not dispose its arguments, so the intermediate string handle
+  // must be consumed here or it leaks on every json marshal.
+  return ctx.newString(json).consume(s => call(ctx, `JSON.parse`, undefined, s));
 }
 
 /**

@@ -79,6 +79,14 @@ export class Arena {
   _map: VMMap;
   _registeredMap: VMMap;
   _registeredMapDispose = new Set<any>();
+  // Handles with no owner: "json" copies and BigInt values. Unlike
+  // proxy-marshalled objects they are not identity-tracked in `_map`. A nested
+  // one is disposed by its parent consumer via `_disposeTransient` as soon as
+  // the value has been copied; this set is the fallback that frees any that
+  // were never nested (e.g. a top-level value before its caller consumes it) on
+  // dispose. Top-level handles are removed in `_marshal` since their caller
+  // disposes them via `mayConsume`.
+  _transientHandles = new Set<QuickJSHandle>();
   _sync = new Set<any>();
   _temporalSync = new Set<any>();
   _symbol = Symbol();
@@ -108,6 +116,10 @@ export class Arena {
    * Dispose of the arena and managed handles. This method won't dispose the VM itself, so the VM has to be disposed of manually.
    */
   dispose() {
+    for (const h of this._transientHandles) {
+      if (h.alive) h.dispose();
+    }
+    this._transientHandles.clear();
     this._map.dispose();
     this._registeredMap.dispose();
     this._symbolHandle.dispose();
@@ -419,8 +431,21 @@ export class Arena {
     h: QuickJSHandle | QuickJSDeferredPromise,
     mode: true | "json" | undefined,
   ): Wrapped<QuickJSHandle> | undefined => {
-    if (mode === "json") return;
+    if (mode === "json") {
+      // json handles have no identity to track; register as transient so they
+      // are disposed once consumed (or on dispose) instead of leaking.
+      this._registerTransient(handleFrom(h));
+      return;
+    }
     return this._register(t, handleFrom(h), this._map)?.[1];
+  };
+
+  _registerTransient = (handle: QuickJSHandle): void => {
+    this._transientHandles.add(handle);
+  };
+
+  _disposeTransient = (handle: QuickJSHandle): void => {
+    if (this._transientHandles.delete(handle) && handle.alive) handle.dispose();
   };
 
   _marshalPreApply = (target: (...args: any[]) => any, that: unknown, args: unknown[]): void => {
@@ -454,9 +479,15 @@ export class Arena {
       registerHostRef: this._registerHostRef,
       find: this._marshalFind,
       pre: this._marshalPre,
+      registerTransient: this._registerTransient,
+      disposeTransient: this._disposeTransient,
       preApply: this._marshalPreApply,
       custom: this._options?.customMarshaller,
     });
+
+    // A top-level transient handle is disposed by the caller via `mayConsume`,
+    // so it must not also be retained (and re-disposed) by the transient set.
+    this._transientHandles.delete(handle);
 
     const syncEnabled = this._options?.syncEnabled ?? true;
     return [handle, !syncEnabled || !this._map.hasHandle(handle)];

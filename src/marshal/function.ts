@@ -12,6 +12,7 @@ export default function marshalFunction(
   unmarshal: (handle: QuickJSHandle) => unknown,
   preMarshal: (target: unknown, handle: QuickJSHandle) => QuickJSHandle | undefined,
   preApply?: (target: (...args: any[]) => any, thisArg: unknown, args: unknown[]) => any,
+  disposeTransient: (handle: QuickJSHandle) => void = () => {},
 ): QuickJSHandle | undefined {
   if (typeof target !== "function") return;
 
@@ -24,7 +25,10 @@ export default function marshalFunction(
         // Class constructors cannot be invoked without new expression, and new.target is not changed
         const result = new target(...args);
         Object.entries(result).forEach(([key, value]) => {
-          ctx.setProp(this, key, marshal(value));
+          const valueHandle = marshal(value);
+          ctx.setProp(this, key, valueHandle);
+          // setProp dup'd the value into `this`; drop ours if it was transient.
+          disposeTransient(valueHandle);
         });
         return this;
       }
@@ -47,7 +51,7 @@ export default function marshalFunction(
     );
 
   const handle = preMarshal(target, raw) ?? raw;
-  marshalProperties(ctx, target, raw, marshal);
+  marshalProperties(ctx, target, raw, marshal, disposeTransient);
 
   return handle;
 }
