@@ -437,7 +437,15 @@ export class Arena {
       this._registerTransient(handleFrom(h));
       return;
     }
-    return this._register(t, handleFrom(h), this._map)?.[1];
+    const registered = this._register(t, handleFrom(h), this._map);
+    if (registered) return registered[1];
+    // `_register` bails for value-only built-ins that `_wrap` excludes (Map,
+    // Set, Date, ArrayBuffer, TypedArray): they are marshalled by value with no
+    // entry in `_map`, so their handle has no owner. Track it as transient so a
+    // nested one is disposed once consumed, like the json path. (Objects already
+    // owned by `_registeredMap` are reached via `_marshalFind`, not here.)
+    if (!this._registeredMap.has(t)) this._registerTransient(handleFrom(h));
+    return;
   };
 
   _registerTransient = (handle: QuickJSHandle): void => {

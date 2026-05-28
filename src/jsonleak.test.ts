@@ -78,6 +78,43 @@ describe("json marshal path handle leak", () => {
   });
 });
 
+describe("value-marshalled built-ins do not leak when nested", () => {
+  // Map/Set/Date/ArrayBuffer/TypedArray are excluded from proxy wrapping and
+  // marshalled by value, so they get no entry in `_map`. A top-level one is
+  // disposed by mayConsume, but a nested one used to have no owner and leaked
+  // its handle (aborting the debug runtime on dispose).
+  const builtinMarshalable = (t: unknown) =>
+    t instanceof Map || t instanceof Set ? true : jsonIsMarshalable(t);
+
+  it("nested Map", async () => {
+    await withArena({ isMarshalable: builtinMarshalable }, arena => {
+      arena.expose({ data: { m: new Map<string, unknown>([["b", new Weird()]]) } });
+      expect(arena.evalCode(`data.m.get("b").x`)).toBe(1);
+    });
+  });
+
+  it("nested Set", async () => {
+    await withArena({ isMarshalable: builtinMarshalable }, arena => {
+      arena.expose({ data: { s: new Set<number>([1, 2]) } });
+      expect(arena.evalCode(`data.s.size`)).toBe(2);
+    });
+  });
+
+  it("nested Date and TypedArray", async () => {
+    await withArena({ isMarshalable: true }, arena => {
+      arena.expose({ data: { d: new Date(0), a: new Uint8Array([1, 2, 3]) } });
+      expect(arena.evalCode(`data.a[1]`)).toBe(2);
+    });
+  });
+
+  it("deeply nested Map", async () => {
+    await withArena({ isMarshalable: builtinMarshalable }, arena => {
+      arena.expose({ data: { a: { b: { m: new Map<string, number>([["x", 9]]) } } } });
+      expect(arena.evalCode(`data.a.b.m.get("x")`)).toBe(9);
+    });
+  });
+});
+
 describe("transient handles are freed as they are consumed (no accumulation)", () => {
   // Marshal `make(i)` many times, disposing the top-level handle each time
   // (mirroring `mayConsume`). With syncEnabled:false nothing is retained in
