@@ -2,6 +2,7 @@ import type {
   QuickJSDeferredPromise,
   QuickJSHandle,
   QuickJSContext,
+  QuickJSAsyncContext,
   SuccessOrFail,
   VmCallResult,
   Intrinsics,
@@ -530,5 +531,30 @@ export class Arena {
 
   _unwrapHandle(target: QuickJSHandle): [QuickJSHandle, boolean] {
     return unwrapHandle(this.context, target, this._symbolHandle);
+  }
+}
+
+/**
+ * An Arena backed by a {@link QuickJSAsyncContext}. In addition to everything
+ * `Arena` offers, it can evaluate code asynchronously with `evalCodeAsync`,
+ * which lets the VM await host promises (e.g. async module loaders or async
+ * functions exposed from the host) without manually pumping pending jobs.
+ */
+export class AsyncArena extends Arena {
+  asyncContext: QuickJSAsyncContext;
+
+  constructor(ctx: QuickJSAsyncContext, options?: Options) {
+    super(ctx, options);
+    this.asyncContext = ctx;
+  }
+
+  /**
+   * Evaluate JS code asynchronously in the VM and get the result on the host
+   * side. Like `evalCode`, it converts and re-throws errors thrown during
+   * evaluation. Use this when the code awaits host-provided promises.
+   */
+  async evalCodeAsync<T = any>(code: string, filename?: string): Promise<T> {
+    const result = await this.asyncContext.evalCodeAsync(code, filename);
+    return this._unwrapResultAndUnmarshal(result);
   }
 }

@@ -1,9 +1,9 @@
-import { getQuickJS } from "quickjs-emscripten";
+import { getQuickJS, newAsyncContext } from "quickjs-emscripten";
 import { describe, expect, test, vi } from "vitest";
 
 import { isWrapped } from "./wrapper";
 
-import { Arena } from ".";
+import { Arena, AsyncArena } from ".";
 
 describe("readme", () => {
   test("first", async () => {
@@ -1034,6 +1034,29 @@ describe("intrinsics configuration", () => {
     arena.dispose();
     ctx.dispose();
     runtime.dispose();
+  });
+});
+
+describe("AsyncArena", () => {
+  test("evalCodeAsync returns values", async () => {
+    const ctx = await newAsyncContext();
+    const arena = new AsyncArena(ctx, { isMarshalable: true });
+
+    expect(await arena.evalCodeAsync(`1 + 2`)).toBe(3);
+    expect(await arena.evalCodeAsync(`({ a: 1, b: [2, 3] })`)).toEqual({ a: 1, b: [2, 3] });
+
+    arena.dispose();
+    ctx.dispose();
+  });
+
+  test("evalCodeAsync re-throws errors", async () => {
+    const ctx = await newAsyncContext();
+    const arena = new AsyncArena(ctx, { isMarshalable: true });
+
+    await expect(arena.evalCodeAsync(`throw new Error("boom")`)).rejects.toThrow("boom");
+
+    arena.dispose();
+    ctx.dispose();
   });
 });
 
