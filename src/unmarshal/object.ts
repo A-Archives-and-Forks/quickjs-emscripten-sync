@@ -10,12 +10,7 @@ export default function unmarshalObject(
   unmarshal: (handle: QuickJSHandle) => [unknown, boolean],
   preUnmarshal: <T>(target: T, handle: QuickJSHandle) => T | undefined,
 ): object | undefined {
-  if (
-    ctx.typeof(handle) !== "object" ||
-    // null check
-    consume(call(ctx, "o => o === null", undefined, handle), n => ctx.dump(n))
-  )
-    return;
+  if (ctx.typeof(handle) !== "object" || ctx.sameValue(handle, ctx.null)) return;
 
   const raw = consume(call(ctx, "Array.isArray", undefined, handle), r => ctx.dump(r)) ? [] : {};
   const obj = preUnmarshal(raw, handle) ?? raw;

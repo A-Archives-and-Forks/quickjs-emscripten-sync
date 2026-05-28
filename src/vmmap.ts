@@ -2,19 +2,28 @@ import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
 import { unwrapResult } from "./vmutil";
 
+/**
+ * Bidirectional map between host values and QuickJS handles.
+ *
+ * Each registered pair gets a numeric id. A value may be registered under two
+ * keys (e.g. a proxy-wrapped object and the underlying object), each with its
+ * own handle, so every lookup direction is backed by an explicit map and id
+ * reverse-lookups, keeping `delete` O(1).
+ */
 export default class VMMap {
   ctx: QuickJSContext;
-  _map1 = new Map<any, number>();
-  _map2 = new Map<any, number>();
-  _map3 = new Map<number, QuickJSHandle>();
-  _map4 = new Map<number, QuickJSHandle>();
-  _counterMap = new Map<number, any>();
+  _keyToId = new Map<any, number>();
+  _key2ToId = new Map<any, number>();
+  _idToHandle = new Map<number, QuickJSHandle>();
+  _idToHandle2 = new Map<number, QuickJSHandle>();
+  _idToKey = new Map<number, any>();
+  _idToKey2 = new Map<number, any>();
   _disposables = new Set<QuickJSHandle>();
   _mapGet: QuickJSHandle;
   _mapSet: QuickJSHandle;
   _mapDelete: QuickJSHandle;
   _mapClear: QuickJSHandle;
-  _counter = Number.MIN_SAFE_INTEGER;
+  _nextId = Number.MIN_SAFE_INTEGER;
 
   constructor(ctx: QuickJSContext) {
     this.ctx = ctx;
@@ -70,18 +79,19 @@ export default class VMMap {
       return v === handle || v === handle2;
     }
 
-    const counter = this._counter++;
-    this._map1.set(key, counter);
-    this._map3.set(counter, handle);
-    this._counterMap.set(counter, key);
+    const id = this._nextId++;
+    this._keyToId.set(key, id);
+    this._idToHandle.set(id, handle);
+    this._idToKey.set(id, key);
     if (key2) {
-      this._map2.set(key2, counter);
+      this._key2ToId.set(key2, id);
+      this._idToKey2.set(id, key2);
       if (handle2) {
-        this._map4.set(counter, handle2);
+        this._idToHandle2.set(id, handle2);
       }
     }
 
-    this.ctx.newNumber(counter).consume(c => {
+    this.ctx.newNumber(id).consume(c => {
       this._call(this._mapSet, undefined, handle, c, handle2 ?? this.ctx.undefined);
     });
 
@@ -106,8 +116,8 @@ export default class VMMap {
   }
 
   get(key: any) {
-    const num = this._map1.get(key) ?? this._map2.get(key);
-    const handle = typeof num === "number" ? this._map3.get(num) : undefined;
+    const id = this._keyToId.get(key) ?? this._key2ToId.get(key);
+    const handle = typeof id === "number" ? this._idToHandle.get(id) : undefined;
 
     if (!handle) return;
     if (!handle.alive) {
@@ -122,7 +132,7 @@ export default class VMMap {
     if (!handle.alive) {
       return;
     }
-    return this._counterMap.get(this.ctx.getNumber(this._call(this._mapGet, undefined, handle)));
+    return this._idToKey.get(this.ctx.getNumber(this._call(this._mapGet, undefined, handle)));
   }
 
   has(key: any) {
@@ -134,46 +144,29 @@ export default class VMMap {
   }
 
   keys() {
-    return this._map1.keys();
+    return this._keyToId.keys();
   }
 
   delete(key: any, dispose?: boolean) {
-    const num = this._map1.get(key) ?? this._map2.get(key);
-    if (typeof num === "undefined") return;
+    const id = this._keyToId.get(key) ?? this._key2ToId.get(key);
+    if (typeof id === "undefined") return;
 
-    const handle = this._map3.get(num);
-    const handle2 = this._map4.get(num);
+    const handle = this._idToHandle.get(id);
+    const handle2 = this._idToHandle2.get(id);
     this._call(
       this._mapDelete,
       undefined,
       ...[handle, handle2].filter((h): h is QuickJSHandle => !!h?.alive),
     );
 
-    this._map1.delete(key);
-    this._map2.delete(key);
-    this._map3.delete(num);
-    this._map4.delete(num);
-
-    for (const [k, v] of this._map1) {
-      if (v === num) {
-        this._map1.delete(k);
-        break;
-      }
-    }
-
-    for (const [k, v] of this._map2) {
-      if (v === num) {
-        this._map2.delete(k);
-        break;
-      }
-    }
-
-    for (const [k, v] of this._counterMap) {
-      if (v === key) {
-        this._counterMap.delete(k);
-        break;
-      }
-    }
+    const key1 = this._idToKey.get(id);
+    const key2 = this._idToKey2.get(id);
+    if (typeof key1 !== "undefined") this._keyToId.delete(key1);
+    if (typeof key2 !== "undefined") this._key2ToId.delete(key2);
+    this._idToHandle.delete(id);
+    this._idToHandle2.delete(id);
+    this._idToKey.delete(id);
+    this._idToKey2.delete(id);
 
     if (dispose) {
       if (handle?.alive) handle.dispose();
@@ -189,12 +182,13 @@ export default class VMMap {
   }
 
   clear() {
-    this._counter = 0;
-    this._map1.clear();
-    this._map2.clear();
-    this._map3.clear();
-    this._map4.clear();
-    this._counterMap.clear();
+    this._nextId = 0;
+    this._keyToId.clear();
+    this._key2ToId.clear();
+    this._idToHandle.clear();
+    this._idToHandle2.clear();
+    this._idToKey.clear();
+    this._idToKey2.clear();
     if (this._mapClear.alive) {
       this._call(this._mapClear, undefined);
     }
@@ -206,12 +200,12 @@ export default class VMMap {
         v.dispose();
       }
     }
-    for (const v of this._map3.values()) {
+    for (const v of this._idToHandle.values()) {
       if (v.alive) {
         v.dispose();
       }
     }
-    for (const v of this._map4.values()) {
+    for (const v of this._idToHandle2.values()) {
       if (v.alive) {
         v.dispose();
       }
@@ -221,33 +215,26 @@ export default class VMMap {
   }
 
   get size() {
-    return this._map1.size;
+    return this._keyToId.size;
   }
 
   [Symbol.iterator](): Iterator<[any, QuickJSHandle, any, QuickJSHandle | undefined]> {
-    const keys = this._map1.keys();
+    const keys = this._keyToId.keys();
     return {
       next: () => {
-         
         while (true) {
           const k1 = keys.next();
           if (k1.done) return { value: undefined, done: true };
-          const n = this._map1.get(k1.value);
-          if (typeof n === "undefined") continue;
-          const v1 = this._map3.get(n);
-          const v2 = this._map4.get(n);
+          const id = this._keyToId.get(k1.value);
+          if (typeof id === "undefined") continue;
+          const v1 = this._idToHandle.get(id);
+          const v2 = this._idToHandle2.get(id);
           if (!v1) continue;
-          const k2 = this._get2(n);
+          const k2 = this._idToKey2.get(id);
           return { value: [k1.value, v1, k2, v2], done: false };
         }
       },
     };
-  }
-
-  _get2(num: number) {
-    for (const [k, v] of this._map2) {
-      if (v === num) return k;
-    }
   }
 
   _call(fn: QuickJSHandle, thisArg: QuickJSHandle | undefined, ...args: QuickJSHandle[]) {

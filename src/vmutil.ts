@@ -52,7 +52,6 @@ export function fn(
   const disposeFn = () => handle.dispose();
   f.dispose = disposeFn;
   f[Symbol.dispose] = disposeFn;
-  f.alive = true;
   Object.defineProperty(f, "alive", {
     get: () => handle.alive,
   });
@@ -113,9 +112,8 @@ export function instanceOf(ctx: QuickJSContext, a: QuickJSHandle, b: QuickJSHand
 }
 
 export function isHandleObject(ctx: QuickJSContext, h: QuickJSHandle): boolean {
-  return ctx.dump(
-    call(ctx, `a => typeof a === "object" && a !== null || typeof a === "function"`, undefined, h),
-  );
+  const type = ctx.typeof(h);
+  return type === "function" || (type === "object" && !ctx.sameValue(h, ctx.null));
 }
 
 export function json(ctx: QuickJSContext, target: any): QuickJSHandle {
