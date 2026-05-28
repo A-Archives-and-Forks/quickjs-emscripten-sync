@@ -28,10 +28,26 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Mint an installation token for our GitHub App. Pushing the release
+      # branch and opening the PR with this token (instead of the default
+      # GITHUB_TOKEN) is what lets CI run on the release PR: events triggered
+      # by GITHUB_TOKEN are deliberately suppressed by GitHub to avoid
+      # recursive workflow runs, so a GITHUB_TOKEN-created PR never fires
+      # `pull_request`. An App token is a distinct identity and does fire it.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       - name: Checkout repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          # Persist the App token so the release branch push below is
+          # attributed to the App, not GITHUB_TOKEN.
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Git
         run: |
@@ -121,6 +137,8 @@ jobs:
       - name: Create Pull Request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
+          # Open the PR as the App so CI's `pull_request` trigger fires.
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const changelog = `${{ steps.changelog.outputs.changelog }}`;
             const version = '${{ steps.bump_version.outputs.new_version }}';
