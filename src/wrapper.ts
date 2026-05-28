@@ -44,7 +44,9 @@ export function wrap<T = any>(
     set(obj, key, value, receiver) {
       const v = unwrap(value, proxyKeySymbol);
       const sync = syncMode?.(receiver) ?? "host";
-      if ((sync !== "vm" && !Reflect.set(obj, key, v, receiver)) || sync === "host" || !ctx.alive)
+      // Set on the target directly (not via `receiver`) so creating a new
+      // property does not re-enter the `defineProperty` trap.
+      if ((sync !== "vm" && !Reflect.set(obj, key, v)) || sync === "host" || !ctx.alive)
         return true;
 
       mayConsumeAll(
@@ -77,6 +79,35 @@ export function wrap<T = any>(
         }
         return true;
       });
+    },
+    defineProperty(obj, key, descriptor) {
+      const sync = syncMode?.(rec) ?? "host";
+      const desc: PropertyDescriptor = { ...descriptor };
+      if ("value" in desc) desc.value = unwrap(desc.value, proxyKeySymbol);
+      if (typeof desc.get === "function") desc.get = unwrap(desc.get, proxyKeySymbol);
+      if (typeof desc.set === "function") desc.set = unwrap(desc.set, proxyKeySymbol);
+
+      if (sync !== "vm" && !Reflect.defineProperty(obj, key, desc)) return false;
+      if (sync === "host" || !ctx.alive) return true;
+
+      mayConsumeAll(
+        [marshal(rec), marshal(key), marshal(desc)],
+        (recHandle, keyHandle, descHandle) => {
+          const [handle2, unwrapped] = unwrapHandle(ctx, recHandle, proxyKeySymbolHandle);
+          const define = (h: QuickJSHandle) =>
+            call(
+              ctx,
+              `(o, k, d) => { Object.defineProperty(o, k, d); }`,
+              undefined,
+              h,
+              keyHandle,
+              descHandle,
+            ).dispose();
+          if (unwrapped) handle2.consume(define);
+          else define(handle2);
+        },
+      );
+      return true;
     },
   }) as Wrapped<T>;
   return rec;
@@ -122,6 +153,15 @@ export function wrapHandle(
     Reflect.deleteProperty(unwrap(target, proxyKeySymbol), key);
   };
 
+  const definer = (h: QuickJSHandle, keyHandle: QuickJSHandle, descHandle: QuickJSHandle) => {
+    const target = unmarshal(h);
+    if (!target) return;
+    const key = unmarshal(keyHandle);
+    if (key === "__proto__") return; // for security
+    const desc = unmarshal(descHandle);
+    Object.defineProperty(unwrap(target, proxyKeySymbol), key, desc);
+  };
+
   const proxyFuncs = ctx.newFunction("proxyFuncs", (t, ...args) => {
     const name = ctx.getNumber(t);
     switch (name) {
@@ -131,6 +171,8 @@ export function wrapHandle(
         return setter(args[0], args[1], args[2]);
       case 3:
         return deleter(args[0], args[1]);
+      case 4:
+        return definer(args[0], args[1], args[2]);
     }
     return ctx.undefined;
   });
@@ -149,7 +191,7 @@ export function wrapHandle(
                 ? value[sym] ?? value
                 : value;
               const sync = proxyFuncs(1, receiver) ?? "vm";
-              if (sync === "host" || Reflect.set(obj, key, v, receiver)) {
+              if (sync === "host" || Reflect.set(obj, key, v)) {
                 if (sync !== "vm") {
                   proxyFuncs(2, receiver, key, v);
                 }
@@ -161,6 +203,15 @@ export function wrapHandle(
               if (sync === "host" || Reflect.deleteProperty(obj, key)) {
                 if (sync !== "vm") {
                   proxyFuncs(3, rec, key);
+                }
+              }
+              return true;
+            },
+            defineProperty(obj, key, descriptor) {
+              const sync = proxyFuncs(1, rec) ?? "vm";
+              if (sync === "host" || Reflect.defineProperty(obj, key, descriptor)) {
+                if (sync !== "vm") {
+                  proxyFuncs(4, rec, key, descriptor);
                 }
               }
               return true;

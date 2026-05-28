@@ -1108,6 +1108,49 @@ describe("Symbol.dispose", () => {
   });
 });
 
+describe("defineProperty sync", () => {
+  test("host -> VM", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+    const data = arena.sync<any>({});
+    arena.expose({ data });
+
+    Object.defineProperty(data, "x", { value: 42, enumerable: true, configurable: true });
+    expect(arena.evalCode(`data.x`)).toBe(42);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+
+  test("VM -> host", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+    const data = arena.sync<any>({});
+    arena.expose({ data });
+
+    arena.evalCode(
+      `Object.defineProperty(data, "y", { value: 7, enumerable: true, configurable: true })`,
+    );
+    expect(data.y).toBe(7);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+
+  test("syncs accessor descriptors host -> VM", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+    const data = arena.sync<any>({});
+    arena.expose({ data });
+
+    Object.defineProperty(data, "g", { get: () => 99, enumerable: true, configurable: true });
+    expect(arena.evalCode(`data.g`)).toBe(99);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+});
+
 describe("marshalByReference", () => {
   test("passes objects through the VM by reference (identity preserved)", async () => {
     const ctx = (await getQuickJS()).newContext();
