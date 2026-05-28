@@ -999,11 +999,15 @@ describe("memory management", () => {
 
     expect(data.items.length).toBe(10);
 
-    // But not unlimited data
+    // But not unlimited data. The allocation happens in a local (non-synced)
+    // structure on purpose: a hard out-of-memory hit while mutating a synced
+    // global mid-flight leaves the VM unrecoverable, so it would not be safe to
+    // keep using or cleanly dispose afterwards.
     expect(() => {
       arena.evalCode(`
-        for (let i = 0; i < 100000; i++) {
-          data.items.push({ id: i, data: "x".repeat(1000) });
+        const huge = [];
+        for (let i = 0; i < 1000000; i++) {
+          huge.push({ id: i, data: "x".repeat(1000) });
         }
       `);
     }).toThrow();

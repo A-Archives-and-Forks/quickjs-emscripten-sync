@@ -1,6 +1,6 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
-import { call } from "../vmutil";
+import { call, consume } from "../vmutil";
 
 export default function unmarshalProperties(
   ctx: QuickJSContext,
@@ -8,8 +8,8 @@ export default function unmarshalProperties(
   target: object | ((...args: any[]) => any),
   unmarshal: (handle: QuickJSHandle) => [unknown, boolean],
 ) {
-  ctx
-    .newFunction("", (key, value) => {
+  consume(
+    ctx.newFunction("", (key, value) => {
       const [keyName] = unmarshal(key);
       if (typeof keyName !== "string" && typeof keyName !== "number" && typeof keyName !== "symbol")
         return;
@@ -43,8 +43,8 @@ export default function unmarshalProperties(
       }, {});
 
       Object.defineProperty(target, keyName, desc);
-    })
-    .consume(fn => {
+    }),
+    fn => {
       call(
         ctx,
         `(o, fn) => {
@@ -56,5 +56,6 @@ export default function unmarshalProperties(
         handle,
         fn,
       ).dispose();
-    });
+    },
+  );
 }

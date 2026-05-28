@@ -59,18 +59,53 @@ export function fn(
   return f;
 }
 
+// Compiled functions for `call` can be cached per context, keyed by code: the
+// code passed to `call` is always a constant literal, so recompiling the same
+// helper on every call (isHandleObject, defineProperties, etc.) was a dominant
+// cost. Caching is opt-in per context via `enableFnCache` because cached
+// handles outlive a single call and must be disposed with `disposeFnCache`;
+// the Arena enables it in its constructor and disposes it in `dispose`. For
+// contexts without a cache, `call` keeps its original compile-and-dispose
+// behaviour so standalone callers don't leak handles.
+const fnCache = new WeakMap<QuickJSContext, Map<string, QuickJSHandle>>();
+
+/** Enable per-context caching of compiled functions used by `call`. */
+export function enableFnCache(ctx: QuickJSContext): void {
+  if (!fnCache.has(ctx)) fnCache.set(ctx, new Map());
+}
+
+/** Dispose all compiled functions cached for a context and disable caching. */
+export function disposeFnCache(ctx: QuickJSContext): void {
+  const cache = fnCache.get(ctx);
+  if (!cache) return;
+  for (const handle of cache.values()) {
+    if (handle.alive) handle.dispose();
+  }
+  fnCache.delete(ctx);
+}
+
 export function call(
   ctx: QuickJSContext,
   code: string,
   thisArg?: QuickJSHandle,
   ...args: QuickJSHandle[]
 ): QuickJSHandle {
-  const f = fn(ctx, code);
-  try {
-    return f(thisArg, ...args);
-  } finally {
-    f.dispose();
+  const cache = fnCache.get(ctx);
+  if (!cache) {
+    const f = fn(ctx, code);
+    try {
+      return f(thisArg, ...args);
+    } finally {
+      f.dispose();
+    }
   }
+
+  let handle = cache.get(code);
+  if (!handle || !handle.alive) {
+    handle = unwrapResult(ctx, ctx.evalCode(code));
+    cache.set(code, handle);
+  }
+  return unwrapResult(ctx, ctx.callFunction(handle, thisArg ?? ctx.undefined, ...args));
 }
 
 export function instanceOf(ctx: QuickJSContext, a: QuickJSHandle, b: QuickJSHandle): boolean {

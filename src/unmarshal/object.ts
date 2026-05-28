@@ -1,6 +1,6 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
-import { call } from "../vmutil";
+import { call, consume } from "../vmutil";
 
 import unmarshalProperties from "./properties";
 
@@ -13,28 +13,29 @@ export default function unmarshalObject(
   if (
     ctx.typeof(handle) !== "object" ||
     // null check
-    ctx
-      .unwrapResult(ctx.evalCode("o => o === null"))
-      .consume(n => ctx.dump(ctx.unwrapResult(ctx.callFunction(n, ctx.undefined, handle))))
+    consume(call(ctx, "o => o === null", undefined, handle), n => ctx.dump(n))
   )
     return;
 
-  const raw = call(ctx, "Array.isArray", undefined, handle).consume(r => ctx.dump(r)) ? [] : {};
+  const raw = consume(call(ctx, "Array.isArray", undefined, handle), r => ctx.dump(r)) ? [] : {};
   const obj = preUnmarshal(raw, handle) ?? raw;
 
-  const prototype = call(
-    ctx,
-    `o => {
+  const prototype = consume(
+    call(
+      ctx,
+      `o => {
       const p = Object.getPrototypeOf(o);
       return !p || p === Object.prototype || p === Array.prototype ? undefined : p;
     }`,
-    undefined,
-    handle,
-  ).consume(prototype => {
-    if (ctx.typeof(prototype) === "undefined") return;
-    const [proto] = unmarshal(prototype);
-    return proto;
-  });
+      undefined,
+      handle,
+    ),
+    prototype => {
+      if (ctx.typeof(prototype) === "undefined") return;
+      const [proto] = unmarshal(prototype);
+      return proto;
+    },
+  );
   if (typeof prototype === "object") {
     Object.setPrototypeOf(obj, prototype);
   }

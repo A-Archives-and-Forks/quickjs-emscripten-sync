@@ -13,7 +13,17 @@ import marshal from "./marshal";
 import unmarshal from "./unmarshal";
 import { complexity, isES2015Class, isObject, walkObject } from "./util";
 import VMMap from "./vmmap";
-import { call, isHandleObject, json, consume, consumeAll, mayConsume, handleFrom } from "./vmutil";
+import {
+  call,
+  isHandleObject,
+  json,
+  consume,
+  consumeAll,
+  mayConsume,
+  handleFrom,
+  enableFnCache,
+  disposeFnCache,
+} from "./vmutil";
 import { wrap, wrapHandle, unwrap, unwrapHandle, Wrapped } from "./wrapper";
 
 export {
@@ -80,6 +90,7 @@ export class Arena {
     }
 
     this.context = options?.experimentalContextEx ? wrapContext(ctx) : ctx;
+    enableFnCache(this.context);
     this._options = options;
     this._symbolHandle = ctx.unwrapResult(ctx.evalCode(`Symbol()`));
     this._map = new VMMap(ctx);
@@ -94,6 +105,7 @@ export class Arena {
     this._map.dispose();
     this._registeredMap.dispose();
     this._symbolHandle.dispose();
+    disposeFnCache(this.context);
     this.context.disposeEx?.();
   }
 
