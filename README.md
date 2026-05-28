@@ -7,7 +7,7 @@ Build a secure plugin system in web browsers
 This library wraps [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten) and provides a way to sync object state between the browser and sandboxed QuickJS.
 
 - Exchange and sync values between the browser (host) and QuickJS seamlessly
-  - Primitives (number, boolean, string, symbol)
+  - Primitives (number, boolean, string, symbol, bigint)
   - Arrays
   - Functions
   - Classes and instances

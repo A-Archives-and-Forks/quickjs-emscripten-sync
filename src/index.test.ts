@@ -1108,6 +1108,23 @@ describe("Symbol.dispose", () => {
   });
 });
 
+describe("BigInt", () => {
+  test("roundtrip", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const arena = new Arena(ctx, { isMarshalable: true });
+
+    expect(arena.evalCode(`123n`)).toBe(123n);
+    expect(arena.evalCode(`2n ** 64n`)).toBe(2n ** 64n);
+
+    const double = arena.evalCode<(x: bigint) => bigint>(`x => x * 2n`);
+    expect(double(21n)).toBe(42n);
+    expect(double(9007199254740993n)).toBe(18014398509481986n);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+});
+
 describe("ArrayBuffer and TypedArray", () => {
   test("roundtrip", async () => {
     const ctx = (await getQuickJS()).newContext();
