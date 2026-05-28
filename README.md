@@ -13,6 +13,9 @@ This library wraps [quickjs-emscripten](https://github.com/justjake/quickjs-emsc
   - Classes and instances
   - Objects with prototypes and any property descriptors
   - Promises
+  - Date
+  - Map and Set (marshalled by value)
+  - ArrayBuffer and typed arrays / DataView (marshalled by value)
 - Expose objects as a global object in QuickJS
 - Marshaling limitation for specific objects
 - Register a pair of objects that will be considered the same between the browser and QuickJS
@@ -245,6 +248,16 @@ Instead of a string, you can also pass a QuickJSHandle directly. In that case, h
 
 Dispose of the arena and managed handles. This method won't dispose the context itself, so the context has to be disposed of manually.
 
+`Arena` also implements `Symbol.dispose`, so you can use the `using` declaration to dispose it automatically:
+
+```js
+{
+  using arena = new Arena(ctx, { isMarshalable: true });
+  arena.evalCode(`1 + 1`);
+} // arena.dispose() is called here
+ctx.dispose();
+```
+
 #### `evalCode<T = any>(code: string): T | undefined`
 
 Evaluate JS code in the context and get the result as an object on the host side. It also converts and re-throws error objects when an error is thrown during evaluation.
@@ -290,6 +303,27 @@ Default value of registeredObjects option of the Arena class constructor.
 
 Measure the complexity of an object as you traverse the field and prototype chain. If max is specified, when the complexity reaches max, the traversal is terminated and it returns the max. In this function, one object and function are counted as a complexity of 1, and primitives are not counted as a complexity.
 
+### `AsyncArena`
+
+`AsyncArena` extends `Arena` for use with a [`QuickJSAsyncContext`](https://github.com/justjake/quickjs-emscripten). It adds `evalCodeAsync`, the async counterpart to `evalCode`, so code that relies on asynchronous module loading can be evaluated.
+
+```js
+import { newAsyncContext } from "quickjs-emscripten";
+import { AsyncArena } from "quickjs-emscripten-sync";
+
+const ctx = await newAsyncContext();
+const arena = new AsyncArena(ctx, { isMarshalable: true });
+
+await arena.evalCodeAsync(`1 + 2`); // 3
+
+arena.dispose();
+ctx.dispose();
+```
+
+#### `evalCodeAsync<T = any>(code: string, filename?: string): Promise<T>`
+
+Evaluate JS code asynchronously and get the result on the host side. Like `evalCode`, it converts and re-throws errors thrown during evaluation.
+
 ## Advanced
 
 ### How to work
@@ -320,6 +354,10 @@ arena.evalCode(`new Cls()`); // Cls { hoge: "foo" }
 #### Operation synchronization
 
 For now, only the `set` and `deleteProperty` operations on objects are subject to synchronization. The result of `Object.defineProperty` on a proxied object will not be synchronized to the other side.
+
+#### Marshalling by value
+
+`Date`, `Map`, `Set`, `ArrayBuffer` and typed arrays are marshalled by value (a snapshot copy is created on the other side). They are not proxied, so mutations are not synchronized between the host and the context, and self-referential `Map`/`Set` are not supported.
 
 ## License
 
