@@ -1,7 +1,7 @@
 import type { QuickJSHandle, QuickJSContext } from "quickjs-emscripten";
 
 import { isObject } from "./util";
-import { call, isHandleObject, mayConsumeAll } from "./vmutil";
+import { call, consume, isHandleObject, mayConsumeAll } from "./vmutil";
 
 export type SyncMode = "both" | "vm" | "host";
 
@@ -108,23 +108,24 @@ export function wrapHandle(
     Reflect.deleteProperty(unwrap(target, proxyKeySymbol), key);
   };
 
-  return ctx
-    .newFunction("proxyFuncs", (t, ...args) => {
-      const name = ctx.getNumber(t);
-      switch (name) {
-        case 1:
-          return getSyncMode(args[0]);
-        case 2:
-          return setter(args[0], args[1], args[2]);
-        case 3:
-          return deleter(args[0], args[1]);
-      }
-      return ctx.undefined;
-    })
-    .consume(proxyFuncs => [
-      call(
-        ctx,
-        `(target, sym, proxyFuncs) => {
+  const proxyFuncs = ctx.newFunction("proxyFuncs", (t, ...args) => {
+    const name = ctx.getNumber(t);
+    switch (name) {
+      case 1:
+        return getSyncMode(args[0]);
+      case 2:
+        return setter(args[0], args[1], args[2]);
+      case 3:
+        return deleter(args[0], args[1]);
+    }
+    return ctx.undefined;
+  });
+  // Use the exception-safe consume so proxyFuncs is disposed even if compiling
+  // the proxy below throws (e.g. under memory pressure).
+  return consume(proxyFuncs, proxyFuncs => [
+    call(
+      ctx,
+      `(target, sym, proxyFuncs) => {
           const rec =  new Proxy(target, {
             get(obj, key, receiver) {
               return key === sym ? obj : Reflect.get(obj, key, receiver)
@@ -153,13 +154,13 @@ export function wrapHandle(
           });
           return rec;
         }`,
-        undefined,
-        handle,
-        proxyKeySymbolHandle,
-        proxyFuncs,
-      ) as Wrapped<QuickJSHandle>,
-      true,
-    ]);
+      undefined,
+      handle,
+      proxyKeySymbolHandle,
+      proxyFuncs,
+    ) as Wrapped<QuickJSHandle>,
+    true,
+  ]);
 }
 
 export function unwrap<T>(obj: T, key: string | symbol): T {

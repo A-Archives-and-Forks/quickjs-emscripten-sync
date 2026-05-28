@@ -3,15 +3,51 @@ import type {
   QuickJSContext,
   QuickJSHandle,
   QuickJSDeferredPromise,
+  SuccessOrFail,
 } from "quickjs-emscripten";
+
+/**
+ * Unwrap a VM result, disposing the error handle on failure.
+ *
+ * `ctx.unwrapResult` throws the error handle without disposing it, which leaks
+ * the handle. Under memory pressure the leak cascades: reading the error needs
+ * the VM, which is already exhausted, so cleanup is skipped entirely. Here we
+ * read the error host-side, always dispose the handle, then throw a host Error.
+ */
+export function unwrapResult<T>(ctx: QuickJSContext, result: SuccessOrFail<T, QuickJSHandle>): T {
+  if ("error" in result && result.error) {
+    const { error } = result;
+    let dumped: any;
+    try {
+      dumped = ctx.dump(error);
+    } catch {
+      // VM may be unable to read the error (e.g. out of memory); fall back below.
+    } finally {
+      if (error.alive) error.dispose();
+    }
+    const err = new Error(
+      typeof dumped === "object" && dumped && "message" in dumped
+        ? String(dumped.message)
+        : dumped !== undefined
+        ? String(dumped)
+        : "quickjs-emscripten-sync: VM evaluation failed",
+    );
+    if (typeof dumped === "object" && dumped) {
+      if ("name" in dumped) err.name = String(dumped.name);
+      if ("stack" in dumped) err.stack = String(dumped.stack);
+    }
+    throw err;
+  }
+  return result.value;
+}
 
 export function fn(
   ctx: QuickJSContext,
   code: string,
 ): ((thisArg: QuickJSHandle | undefined, ...args: QuickJSHandle[]) => QuickJSHandle) & Disposable {
-  const handle = ctx.unwrapResult(ctx.evalCode(code));
+  const handle = unwrapResult(ctx, ctx.evalCode(code));
   const f: any = (thisArg: QuickJSHandle | undefined, ...args: QuickJSHandle[]): any => {
-    return ctx.unwrapResult(ctx.callFunction(handle, thisArg ?? ctx.undefined, ...args));
+    return unwrapResult(ctx, ctx.callFunction(handle, thisArg ?? ctx.undefined, ...args));
   };
   const disposeFn = () => handle.dispose();
   f.dispose = disposeFn;
@@ -51,6 +87,20 @@ export function json(ctx: QuickJSContext, target: any): QuickJSHandle {
   const json = JSON.stringify(target);
   if (!json) return ctx.undefined;
   return call(ctx, `JSON.parse`, undefined, ctx.newString(json));
+}
+
+/**
+ * Run `cb` with `handle`, then dispose `handle` even if `cb` throws.
+ *
+ * Unlike `handle.consume`, which skips disposal when its callback throws, this
+ * helper disposes in a `finally` so error paths don't leak the handle.
+ */
+export function consume<T extends QuickJSHandle, K>(handle: T, cb: (handle: T) => K): K {
+  try {
+    return cb(handle);
+  } finally {
+    if (handle.alive) handle.dispose();
+  }
 }
 
 export function consumeAll<T extends QuickJSHandle[], K>(handles: T, cb: (handles: T) => K): K {

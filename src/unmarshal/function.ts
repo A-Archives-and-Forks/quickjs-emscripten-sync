@@ -1,6 +1,6 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
-import { call, mayConsumeAll } from "../vmutil";
+import { call, mayConsumeAll, unwrapResult } from "../vmutil";
 
 import unmarshalProperties from "./properties";
 
@@ -26,7 +26,7 @@ export default function unmarshalFunction(
           return this;
         }
 
-        const resultHandle = ctx.unwrapResult(ctx.callFunction(handle, thisHandle, ...argHandles));
+        const resultHandle = unwrapResult(ctx, ctx.callFunction(handle, thisHandle, ...argHandles));
 
         const [result, alreadyExists] = unmarshal(resultHandle);
         if (alreadyExists) resultHandle.dispose();

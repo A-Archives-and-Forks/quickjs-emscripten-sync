@@ -35,11 +35,13 @@ export default function marshalProperties(
     });
   };
 
-  const desc = Object.getOwnPropertyDescriptors(target);
-  Object.entries(desc).forEach(([k, v]) => cb(k, v));
-  Object.getOwnPropertySymbols(desc).forEach(k => cb(k, (desc as any)[k]));
+  try {
+    const desc = Object.getOwnPropertyDescriptors(target);
+    Object.entries(desc).forEach(([k, v]) => cb(k, v));
+    Object.getOwnPropertySymbols(desc).forEach(k => cb(k, (desc as any)[k]));
 
-  call(ctx, `Object.defineProperties`, undefined, handle, descs).dispose();
-
-  descs.dispose();
+    call(ctx, `Object.defineProperties`, undefined, handle, descs).dispose();
+  } finally {
+    descs.dispose();
+  }
 }

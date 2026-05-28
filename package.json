@@ -34,6 +34,7 @@
   "scripts": {
     "build": "tsc && vite build",
     "test": "vitest",
+    "bench": "vitest bench --run",
     "lint": "eslint ."
   },
   "peerDependencies": {
@@ -44,7 +45,7 @@
     "eslint": "^9.39.4",
     "eslint-config-reearth": "^0.3.8",
     "prettier": "^3.8.3",
-    "quickjs-emscripten": "^0.31.0",
+    "quickjs-emscripten": "^0.32.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.3",
     "vite-plugin-dts": "^4.3.0",

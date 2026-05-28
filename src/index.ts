@@ -13,7 +13,7 @@ import marshal from "./marshal";
 import unmarshal from "./unmarshal";
 import { complexity, isES2015Class, isObject, walkObject } from "./util";
 import VMMap from "./vmmap";
-import { call, isHandleObject, json, consumeAll, mayConsume, handleFrom } from "./vmutil";
+import { call, isHandleObject, json, consume, consumeAll, mayConsume, handleFrom } from "./vmutil";
 import { wrap, wrapHandle, unwrap, unwrapHandle, Wrapped } from "./wrapper";
 
 export {
@@ -150,7 +150,7 @@ export class Arena {
     if ("value" in result) {
       return result.value;
     }
-    throw this._unwrapIfNotSynced(result.error.consume(this._unmarshal));
+    throw this._unwrapIfNotSynced(consume(result.error, this._unmarshal));
   }
 
   /**
@@ -355,12 +355,12 @@ export class Arena {
     if ("value" in result) {
       return result.value;
     }
-    throw this._unwrapIfNotSynced(result.error.consume(this._unmarshal));
+    throw this._unwrapIfNotSynced(consume(result.error, this._unmarshal));
   }
 
   _unwrapResultAndUnmarshal(result: VmCallResult<QuickJSHandle> | undefined): any {
     if (!result) return;
-    return this._unwrapIfNotSynced(this._unwrapResult(result).consume(this._unmarshal));
+    return this._unwrapIfNotSynced(consume(this._unwrapResult(result), this._unmarshal));
   }
 
   _isMarshalable = (t: unknown): boolean | "json" => {

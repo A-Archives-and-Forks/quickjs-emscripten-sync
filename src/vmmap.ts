@@ -1,5 +1,7 @@
 import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
+import { unwrapResult } from "./vmutil";
+
 export default class VMMap {
   ctx: QuickJSContext;
   _map1 = new Map<any, number>();
@@ -249,7 +251,8 @@ export default class VMMap {
   }
 
   _call(fn: QuickJSHandle, thisArg: QuickJSHandle | undefined, ...args: QuickJSHandle[]) {
-    return this.ctx.unwrapResult(
+    return unwrapResult(
+      this.ctx,
       this.ctx.callFunction(
         fn,
         typeof thisArg === "undefined" ? this.ctx.undefined : thisArg,
