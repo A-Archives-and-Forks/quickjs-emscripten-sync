@@ -1,6 +1,6 @@
 # quickjs-emscripten-sync
 
-[![CI](https://github.com/reearth/quickjs-emscripten-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/reearth/quickjs-emscripten-sync/actions/workflows/main.yml) [![codecov](https://codecov.io/gh/reearth/quickjs-emscripten-sync/branch/main/graph/badge.svg)](https://codecov.io/gh/reearth/quickjs-emscripten-sync)
+[![CI](https://github.com/reearth/quickjs-emscripten-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/reearth/quickjs-emscripten-sync/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/reearth/quickjs-emscripten-sync/branch/main/graph/badge.svg)](https://codecov.io/gh/reearth/quickjs-emscripten-sync)
 
 **Build a secure plugin system for web browsers.**
 

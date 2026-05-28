@@ -30,7 +30,9 @@ export default defineConfig({
     testTimeout: 30000,
     coverage: {
       provider: "v8",
-      reporter: ["text", "json"],
+      // json-summary is required by the GitHub Actions coverage report;
+      // json adds the per-file detail it links to.
+      reporter: ["text", "json", "json-summary"],
     },
   },
 });

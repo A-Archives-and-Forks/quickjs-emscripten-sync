@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: read
+  # Lets the coverage report action post/update a comment on pull requests.
+  pull-requests: write
 
 jobs:
   ci:
@@ -27,10 +29,11 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm test -- --coverage
+        run: npm test -- run --coverage
 
-      - name: codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+      - name: Report coverage
+        if: always()
+        uses: davelosert/vitest-coverage-report-action@02f3c2e641286b7fa308cd3e430783103ce6103b # v2.12.0
 
       - name: Build
         run: npm run build
