@@ -12,6 +12,7 @@ import { wrapContext, QuickJSContextEx } from "./contextex";
 import { defaultRegisteredObjects } from "./default";
 import marshal from "./marshal";
 import unmarshal from "./unmarshal";
+import unmarshalHostRef from "./unmarshal/hostref";
 import { complexity, isES2015Class, isObject, walkObject } from "./util";
 import VMMap from "./vmmap";
 import {
@@ -66,6 +67,8 @@ export type Options = {
   experimentalContextEx?: boolean;
   /** Globally enable sync mode (default `true`). When `false`, objects are not wrapped with proxies and marshalled handles are disposed after use, so `arena.sync` has no effect but objects are not retained for their whole lifetime. Useful to avoid memory growth when frequently exchanging short-lived objects. */
   syncEnabled?: boolean;
+  /** A callback that returns whether an object should be passed to the VM by reference (as an opaque HostRef) instead of being marshalled by value/proxy. The guest cannot read such objects, but can hold them and pass them back to the host, where they resolve to the original object. */
+  marshalByReference?: (target: any) => boolean;
 };
 
 /**
@@ -388,6 +391,19 @@ export class Arena {
     return (typeof im === "function" ? im(this._unwrap(t)) : im) ?? "json";
   };
 
+  _marshalByReference = (t: unknown): boolean => {
+    return !!this._options?.marshalByReference?.(this._unwrap(t));
+  };
+
+  // Register an opaque HostRef handle by its host value without wrapping it.
+  _registerHostRef = (t: unknown, handle: QuickJSHandle): QuickJSHandle => {
+    const u = this._unwrap(t);
+    const existing = this._map.get(u);
+    if (existing) return existing;
+    this._map.set(u, handle);
+    return handle;
+  };
+
   _marshalFind = (t: unknown) => {
     const unwrappedT = this._unwrap(t);
     const handle =
@@ -425,10 +441,17 @@ export class Arena {
       return [registered, false];
     }
 
-    const handle = marshal(this._wrap(target) ?? target, {
+    // Pass-by-reference objects must reference the original, not a proxy wrapper.
+    const marshalTarget = this._marshalByReference(target)
+      ? this._unwrap(target)
+      : this._wrap(target) ?? target;
+
+    const handle = marshal(marshalTarget, {
       ctx: this.context,
       unmarshal: this._unmarshal,
       isMarshalable: this._isMarshalable,
+      marshalByReference: this._marshalByReference,
+      registerHostRef: this._registerHostRef,
       find: this._marshalFind,
       pre: this._marshalPre,
       preApply: this._marshalPreApply,
@@ -453,6 +476,12 @@ export class Arena {
       return registered;
     }
 
+    // Resolve opaque HostRefs before wrapping, since a proxy would hide them.
+    if (this._options?.marshalByReference) {
+      const ref = unmarshalHostRef(this.context, handle);
+      if (ref) return ref.value;
+    }
+
     const [wrappedHandle] = this._wrapHandle(handle);
     return unmarshal(wrappedHandle ?? handle, {
       ctx: this.context,
@@ -460,6 +489,7 @@ export class Arena {
       find: this._unmarshalFind,
       pre: this._preUnmarshal,
       custom: this._options?.customUnmarshaller,
+      hostRef: !!this._options?.marshalByReference,
     });
   };
 

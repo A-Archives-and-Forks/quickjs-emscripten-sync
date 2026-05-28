@@ -2,6 +2,7 @@ import type { QuickJSDeferredPromise, QuickJSHandle, QuickJSContext } from "quic
 
 import marshalCustom, { defaultCustom } from "./custom";
 import marshalFunction from "./function";
+import marshalHostRef from "./hostref";
 import marshalJSON from "./json";
 import marshalMapSet from "./mapset";
 import marshalObject from "./object";
@@ -12,6 +13,8 @@ export type Options = {
   ctx: QuickJSContext;
   unmarshal: (handle: QuickJSHandle) => unknown;
   isMarshalable?: (target: unknown) => boolean | "json";
+  marshalByReference?: (target: unknown) => boolean;
+  registerHostRef?: (target: unknown, handle: QuickJSHandle) => QuickJSHandle;
   find: (target: unknown) => QuickJSHandle | undefined;
   pre: (
     target: unknown,
@@ -34,6 +37,13 @@ export function marshal(target: unknown, options: Options): QuickJSHandle {
 
   {
     const handle = find(target);
+    if (handle) return handle;
+  }
+
+  // Opt-in pass-by-reference: hand the object to the VM as an opaque HostRef
+  // instead of marshalling its contents. Bypasses isMarshalable on purpose.
+  if (options.marshalByReference?.(target) && options.registerHostRef) {
+    const handle = marshalHostRef(ctx, target, options.registerHostRef);
     if (handle) return handle;
   }
 

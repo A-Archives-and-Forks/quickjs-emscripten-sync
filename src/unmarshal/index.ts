@@ -2,6 +2,7 @@ import type { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
 
 import unmarshalCustom, { defaultCustom } from "./custom";
 import unmarshalFunction from "./function";
+import unmarshalHostRef from "./hostref";
 import unmarshalMapSet from "./mapset";
 import unmarshalObject from "./object";
 import unmarshalPrimitive from "./primitive";
@@ -14,6 +15,8 @@ export type Options = {
   find: (handle: QuickJSHandle) => unknown | undefined;
   pre: <T = unknown>(target: T, handle: QuickJSHandle) => T | undefined;
   custom?: Iterable<(obj: QuickJSHandle, ctx: QuickJSContext) => any>;
+  /** When true, resolve opaque HostRef handles back to their host value. */
+  hostRef?: boolean;
 };
 
 export function unmarshal(handle: QuickJSHandle, options: Options): any {
@@ -37,6 +40,12 @@ function unmarshalInner(handle: QuickJSHandle, options: Options): [any, boolean]
   }
 
   const unmarshal2 = (h: QuickJSHandle) => unmarshalInner(h, options);
+
+  // Opaque HostRef handles resolve back to the original host value by reference.
+  if (options.hostRef) {
+    const ref = unmarshalHostRef(ctx, handle);
+    if (ref) return [ref.value, true];
+  }
 
   // Custom types (Symbol, Date, ArrayBuffer, TypedArray, ...) are unmarshalled
   // by value and not tracked in the map, so their source handle is not owned by

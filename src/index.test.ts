@@ -1108,6 +1108,59 @@ describe("Symbol.dispose", () => {
   });
 });
 
+describe("marshalByReference", () => {
+  test("passes objects through the VM by reference (identity preserved)", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const secret = {
+      hidden: 42,
+      method() {
+        return this.hidden;
+      },
+    };
+    const arena = new Arena(ctx, {
+      isMarshalable: true,
+      marshalByReference: t => t === secret,
+    });
+
+    arena.expose({
+      getSecret: () => secret,
+      useSecret: (s: typeof secret) => s.method(),
+    });
+
+    // VM receives the opaque ref and passes it back; host resolves the original
+    expect(arena.evalCode(`useSecret(getSecret())`)).toBe(42);
+
+    // host -> VM -> host keeps identity
+    const echo = arena.evalCode<(x: typeof secret) => typeof secret>(`x => x`);
+    expect(echo(secret)).toBe(secret);
+
+    // the guest cannot read into the opaque ref
+    expect(
+      arena.evalCode(`(() => { try { return getSecret().hidden; } catch { return "threw"; } })()`),
+    ).not.toBe(42);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+
+  test("resolves host refs nested in objects", async () => {
+    const ctx = (await getQuickJS()).newContext();
+    const secret = { token: "abc" };
+    const arena = new Arena(ctx, {
+      isMarshalable: true,
+      marshalByReference: t => t === secret,
+    });
+
+    arena.expose({ wrap: () => ({ inner: secret, label: "x" }) });
+    const out = arena.evalCode(`wrap()`);
+    expect(out.label).toBe("x");
+    expect(out.inner).toBe(secret);
+
+    arena.dispose();
+    ctx.dispose();
+  });
+});
+
 describe("BigInt", () => {
   test("roundtrip", async () => {
     const ctx = (await getQuickJS()).newContext();

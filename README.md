@@ -219,6 +219,8 @@ type Options = {
   compat?: boolean;
   /** Globally enable sync mode (default `true`). When `false`, objects are not wrapped with proxies and marshalled handles are disposed after use, so `arena.sync` has no effect but objects are not retained for their whole lifetime. Useful to avoid memory growth when frequently exchanging short-lived objects. */
   syncEnabled?: boolean;
+  /** A callback that returns whether an object should be passed to the VM by reference (as an opaque HostRef) instead of being marshalled by value/proxy. The guest cannot read such objects, but can hold them and pass them back to the host, where they resolve to the original object. */
+  marshalByReference?: (target: any) => boolean;
 }
 ```
 
@@ -245,6 +247,23 @@ const arena = new Arena(ctx, {
 ```
 
 Instead of a string, you can also pass a QuickJSHandle directly. In that case, however, you have to dispose of them manually when destroying the context.
+
+**`marshalByReference`**: Return `true` for objects you want to pass to the VM as an opaque reference (a [HostRef](https://github.com/justjake/quickjs-emscripten)) instead of marshalling their contents. The guest cannot read or mutate such objects, but can hold them and pass them back to the host, where they resolve to the **original** object (identity preserved). Useful for handing the sandbox a host resource (a class instance, a DOM node, ...) that it should carry around opaquely rather than copy.
+
+```js
+const secret = { token: "..." };
+const arena = new Arena(ctx, {
+  isMarshalable: true,
+  marshalByReference: target => target === secret,
+});
+
+arena.expose({
+  getSecret: () => secret,
+  useSecret: s => s.token, // host receives the original `secret`
+});
+
+arena.evalCode(`useSecret(getSecret())`); // "..."  (guest never sees the contents)
+```
 
 #### `dispose()`
 
