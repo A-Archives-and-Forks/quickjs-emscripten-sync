@@ -13,7 +13,8 @@
 # Release flow:
 #   1. Run the `Release` workflow (release.yml) to open a release PR.
 #   2. Merge the PR.
-#   3. Push the matching tag (e.g. `v1.9.0`). This workflow fires.
+#   3. The `Tag release` workflow (tag-release.yml) pushes the matching tag
+#      (e.g. `v1.9.0`) automatically, which makes this workflow fire.
 #   4. Approve the `npm-publish` environment in the run page.
 #   5. npm receives the package with a provenance attestation; anyone can
 #      verify with `npm audit signatures`.

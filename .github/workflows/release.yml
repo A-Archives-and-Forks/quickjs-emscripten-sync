@@ -159,7 +159,7 @@ jobs:
 
             ### Post-merge Steps
             After merging this PR:
-            1. Pull the merged main and push the tag: \`git tag v${version} && git push origin v${version}\`
+            1. The \`Tag release\` workflow pushes the \`v${version}\` tag automatically, which triggers \`Publish\`.
             2. Approve the \`npm-publish\` environment on the resulting Publish workflow run to publish to npm with provenance
             `;
 

@@ -1,0 +1,72 @@
+# Pushes the version tag automatically once a release PR is merged.
+#
+# Release flow (see release.yml / publish.yml for the rest):
+#   1. Run the `Release` workflow to open a release PR.
+#   2. Merge the PR. <-- this workflow fires here.
+#   3. This workflow pushes the matching tag (e.g. `v1.9.0`) using the org
+#      GitHub App token, which makes the `Publish` workflow fire.
+#   4. Approve the `npm-publish` environment to publish to npm.
+#
+# The tag is pushed with the App token (not GITHUB_TOKEN) on purpose: a tag
+# push made with GITHUB_TOKEN does not trigger other workflows, so `Publish`
+# would never run. The App is a distinct identity, so its push fires `Publish`
+# normally. The npm-publish environment approval gate still protects the
+# actual publish, so an unintended merge cannot auto-publish.
+
+name: Tag release
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    # Only for merged release PRs (not just closed-without-merge).
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout merged main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Derive and verify version
+        id: version
+        run: |
+          # The release branch is named release/vX.Y.Z; package.json was
+          # bumped to X.Y.Z in the same PR. Require both to agree before
+          # tagging, so a hand-edited branch name can't mistag a release.
+          BRANCH_VERSION="${HEAD_REF#release/}"        # -> vX.Y.Z
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$BRANCH_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Branch version $BRANCH_VERSION does not match package.json $PKG_VERSION"
+            exit 1
+          fi
+          echo "tag=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+      - name: Push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; nothing to do."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Pushed $TAG"
