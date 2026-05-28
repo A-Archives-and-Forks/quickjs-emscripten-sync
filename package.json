@@ -11,16 +11,16 @@
   "bugs": "https://github.com/reearth/quickjs-emscripten-sync/issues",
   "type": "module",
   "source": "./src/index.ts",
-  "main": "./dist/quickjs-emscripten-sync.umd.js",
-  "module": "./dist/quickjs-emscripten-sync.mjs",
-  "unpkg": "./dist/quickjs-emscripten-sync.umd.js",
+  "main": "./dist/quickjs-emscripten-sync.umd.cjs",
+  "module": "./dist/quickjs-emscripten-sync.js",
+  "unpkg": "./dist/quickjs-emscripten-sync.umd.cjs",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/quickjs-emscripten-sync.mjs",
-      "require": "./dist/quickjs-emscripten-sync.umd.js"
+      "import": "./dist/quickjs-emscripten-sync.js",
+      "require": "./dist/quickjs-emscripten-sync.umd.cjs"
     }
   },
   "files": [
