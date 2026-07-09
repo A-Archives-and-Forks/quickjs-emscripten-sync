@@ -13,6 +13,7 @@ import { defaultRegisteredObjects } from "./default";
 import marshal from "./marshal";
 import unmarshal from "./unmarshal";
 import unmarshalHostRef from "./unmarshal/hostref";
+import unmarshalPrimitive from "./unmarshal/primitive";
 import { complexity, isES2015Class, isObject, walkObject } from "./util";
 import VMMap from "./vmmap";
 import {
@@ -26,7 +27,7 @@ import {
   enableFnCache,
   disposeFnCache,
 } from "./vmutil";
-import { wrap, wrapHandle, unwrap, unwrapHandle, Wrapped } from "./wrapper";
+import { wrap, createWrapHandle, unwrap, unwrapHandle, Wrapped, WrapHandle } from "./wrapper";
 
 export {
   VMMap,
@@ -91,6 +92,7 @@ export class Arena {
   _temporalSync = new Set<any>();
   _symbol = Symbol();
   _symbolHandle: QuickJSHandle;
+  _wrapHandleImpl: WrapHandle;
   _options?: Options;
 
   /** Constructs a new Arena instance. It requires a quickjs-emscripten context initialized with `quickjs.newContext()`. */
@@ -107,6 +109,17 @@ export class Arena {
     enableFnCache(this.context);
     this._options = options;
     this._symbolHandle = ctx.unwrapResult(ctx.evalCode(`Symbol()`));
+    // One proxyFuncs handle shared by every wrapped handle for the Arena's
+    // lifetime, instead of allocating a fresh VM function per wrap.
+    this._wrapHandleImpl = createWrapHandle(
+      this.context,
+      this._symbol,
+      this._symbolHandle,
+      this._unmarshal,
+      this._syncMode,
+      this._options?.isHandleWrappable,
+      this._options?.syncEnabled ?? true,
+    );
     this._map = new VMMap(ctx);
     this._registeredMap = new VMMap(ctx);
     this.registerAll(options?.registeredObjects ?? defaultRegisteredObjects);
@@ -122,6 +135,7 @@ export class Arena {
     this._transientHandles.clear();
     this._map.dispose();
     this._registeredMap.dispose();
+    this._wrapHandleImpl.dispose();
     this._symbolHandle.dispose();
     disposeFnCache(this.context);
     this.context.disposeEx?.();
@@ -500,7 +514,11 @@ export class Arena {
     this._transientHandles.delete(handle);
 
     const syncEnabled = this._options?.syncEnabled ?? true;
-    return [handle, !syncEnabled || !this._map.hasHandle(handle)];
+    // A non-object (primitive) handle is never retained in `_map` (registered
+    // primitives already returned above via `_registeredMap`), so skip the
+    // `hasHandle` VM roundtrip and mark it disposable directly.
+    if (!syncEnabled || !isObject(target)) return [handle, true];
+    return [handle, !this._map.hasHandle(handle)];
   };
 
   _prepareMarshalReturn = (h: QuickJSHandle): QuickJSHandle => {
@@ -511,7 +529,12 @@ export class Arena {
     // `x === fn()` identity across calls. Hand the VM a dup instead and keep
     // ours alive. With sync off, handles are not retained, so this is a no-op.
     const syncEnabled = this._options?.syncEnabled ?? true;
-    return syncEnabled && h.alive && this._map.hasHandle(h) ? h.dup() : h;
+    // Only object handles are retained in `_map`; a primitive return can never
+    // be in the map, so `isHandleObject` (a cheap typeof) skips the `hasHandle`
+    // VM roundtrip for primitive returns from host functions.
+    return syncEnabled && h.alive && isHandleObject(this.context, h) && this._map.hasHandle(h)
+      ? h.dup()
+      : h;
   };
 
   _preUnmarshal = (t: any, h: QuickJSHandle): Wrapped<any> => {
@@ -523,6 +546,14 @@ export class Arena {
   };
 
   _unmarshal = (handle: QuickJSHandle): any => {
+    // Primitives (undefined/number/string/boolean/bigint/null) are resolved by a
+    // cheap host-side `ctx.typeof`, skipping the `_registeredMap` VM lookup,
+    // HostRef resolution, and `_wrapHandle`. The VMMap only ever keys objects and
+    // symbols, so a primitive handle can never match `getByHandle`; symbols fall
+    // through `unmarshalPrimitive` and still reach the lookup below.
+    const [primitive, ok] = unmarshalPrimitive(this.context, handle);
+    if (ok) return primitive;
+
     const registered = this._registeredMap.getByHandle(handle);
     if (typeof registered !== "undefined") {
       return registered;
@@ -604,16 +635,7 @@ export class Arena {
   };
 
   _wrapHandle(handle: QuickJSHandle): [Wrapped<QuickJSHandle> | undefined, boolean] {
-    return wrapHandle(
-      this.context,
-      handle,
-      this._symbol,
-      this._symbolHandle,
-      this._unmarshal,
-      this._syncMode,
-      this._options?.isHandleWrappable,
-      this._options?.syncEnabled ?? true,
-    );
+    return this._wrapHandleImpl.wrapHandle(handle);
   }
 
   _unwrapHandle(target: QuickJSHandle): [QuickJSHandle, boolean] {
