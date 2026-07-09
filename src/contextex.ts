@@ -1,4 +1,4 @@
-import { QuickJSContext, QuickJSHandle, VmFunctionImplementation } from "quickjs-emscripten";
+import type { QuickJSContext, QuickJSHandle, VmFunctionImplementation } from "quickjs-emscripten";
 
 import { consumeAll } from "./vmutil";
 
